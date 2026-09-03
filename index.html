@@ -1,0 +1,801 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Drop in your ad creatives and see which ones Meta's retrieval stage collapses into one Entity ID — and which stream (visual, copy, audio, or theme) is causing it. Runs entirely in your browser; nothing is uploaded.">
+<meta property="og:title" content="Creative Similarity Scanner">
+<meta property="og:description" content="See which of your ad creatives Meta will merge into one Entity ID, and why.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%94%8D</text></svg>">
+<title>Creative Similarity Scanner</title>
+<style>
+  :root{
+    --ink:#12100E; --panel:#1B1714; --panel-2:#221D19; --line:#332B25;
+    --bone:#EDE6DA; --muted:#8A7C6E; --moss:#8CA860; --amber:#D19A46;
+    --brick:#B4534A; --clay:#7E6A55; --steel:#6E8CA8; --plum:#A87EA0;
+    --mono: ui-monospace,"SF Mono","Roboto Mono",Menlo,Consolas,monospace;
+    --sans:"Helvetica Neue",Inter,system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--ink);color:var(--bone);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+  .masthead{border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:22px}
+  .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--clay);margin-bottom:10px}
+  h1{margin:0;font-size:clamp(28px,5vw,46px);line-height:.95;font-weight:800;letter-spacing:-.035em;text-transform:uppercase}
+  h1 em{font-style:normal;color:var(--moss)}
+  .dek{margin:12px 0 0;max-width:66ch;color:var(--muted);font-size:14px}
+  .streams{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
+  .sflag{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;padding:4px 9px;border-radius:2px;border:1px solid}
+  .sflag.v{color:var(--moss);border-color:#38471F;background:#1E2A16}
+  .sflag.t{color:var(--steel);border-color:#2C3E4E;background:#161E26}
+  .sflag.a{color:var(--plum);border-color:#4A3646;background:#241B23}
+  .sflag.h{color:var(--amber);border-color:#59461F;background:#2A2213}
+
+  .drop{border:1px dashed var(--line);background:var(--panel);padding:26px 22px;text-align:center;cursor:pointer;border-radius:2px;margin-bottom:18px}
+  .drop:hover,.drop.over{border-color:var(--moss);background:var(--panel-2)}
+  .drop .big{font-size:16px;font-weight:600;letter-spacing:-.01em}
+  .drop .sm{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px;letter-spacing:.05em}
+  input[type=file]{display:none}
+
+  .readout{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin-bottom:20px}
+  .stat{background:var(--panel);padding:15px 13px}
+  .stat .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+  .stat .v{font-size:32px;font-weight:800;letter-spacing:-.04em;line-height:1.1;margin-top:4px}
+  .stat .n{font-family:var(--mono);font-size:10.5px;color:var(--clay);margin-top:2px}
+  .v.ok{color:var(--moss)} .v.warn{color:var(--amber)} .v.bad{color:var(--brick)}
+
+  .ctrl{display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);padding:12px 14px;margin-bottom:20px}
+  .ctrl label{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  input[type=range]{accent-color:var(--moss);width:160px}
+  .thr{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--moss);min-width:44px}
+  .hint{font-family:var(--mono);font-size:10.5px;color:#5E5147}
+
+  .sec-label{font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--clay);margin:22px 0 10px;display:flex;justify-content:space-between;align-items:baseline}
+
+  .card{background:var(--panel);border:1px solid var(--line);margin-bottom:10px;overflow:hidden}
+  .card.dup{border-color:#5A2F2A}
+  .card.pick{border-left:3px solid var(--moss)}
+  .card.pass{opacity:.66}
+  .ctop{display:flex}
+  .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--clay);background:var(--panel-2);padding:11px 9px;border-right:1px solid var(--line);min-width:34px;text-align:center}
+  .card.dup .num{color:#DE8A80}
+  .strip{display:flex;flex-shrink:0;background:#0C0A09}
+  .strip img{width:66px;height:66px;object-fit:cover;display:block;border-right:1px solid #0C0A09}
+  .strip img.open{outline:2px solid var(--amber);outline-offset:-2px}
+  .meta{flex:1;min-width:0;padding:10px 14px}
+  .fname{font-size:13.5px;font-weight:600;letter-spacing:-.01em;word-break:break-all}
+  .fmeta{font-family:var(--mono);font-size:10.5px;color:#5E5147;margin-top:2px;letter-spacing:.04em}
+  .have{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
+  .have i{font-style:normal;font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;padding:2px 6px;border-radius:2px;border:1px solid var(--line);color:#4E443B}
+  .have i.on.v{color:var(--moss);border-color:#38471F}
+  .have i.on.t{color:var(--steel);border-color:#2C3E4E}
+  .have i.on.a{color:var(--plum);border-color:#4A3646}
+  .have i.on.h{color:var(--amber);border-color:#59461F}
+  .verdict{margin-top:7px}
+  .vline{font-size:12.5px;color:#B9AD9E;margin-bottom:3px;line-height:1.4}
+  .vline .ref,.vline .pct{font-family:var(--mono);font-weight:700;color:#DE8A80}
+  .vline.warn .ref,.vline.warn .pct{color:var(--amber)}
+  .flag{display:inline-block;font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;padding:3px 7px;border-radius:2px}
+  .flag.uniq{background:#232C18;color:var(--moss);border:1px solid #38471F}
+  .flag.safe{background:#1E2E1A;color:#A8C97F;border:1px solid #3D5A2C;font-weight:700}
+  .flag.skip{background:#241E1A;color:#6B5E52;border:1px solid #3A302A}
+  .pickbtn{background:transparent;border:1px solid var(--line);color:var(--muted);font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:2px;cursor:pointer;margin-left:6px}
+  .pickbtn:hover{border-color:var(--moss);color:var(--moss)}
+  .kill{background:none;border:none;color:#4E443B;font-size:18px;cursor:pointer;padding:9px 11px 0 0;line-height:1;align-self:flex-start}
+  .kill:hover{color:var(--brick)}
+  .expand{background:none;border:none;border-top:1px solid var(--line);width:100%;text-align:left;color:var(--muted);font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;padding:7px 14px;cursor:pointer}
+  .expand:hover{color:var(--bone);background:var(--panel-2)}
+  .panel{border-top:1px solid var(--line);background:var(--panel-2);padding:12px 14px}
+  .panel textarea{width:100%;height:66px;background:var(--ink);border:1px solid var(--line);color:var(--bone);font-family:var(--sans);font-size:12.5px;padding:8px;resize:vertical;outline:none}
+  .panel textarea:focus{border-color:var(--steel)}
+  .plab{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#5E5147;margin-bottom:4px;display:block}
+  .tags{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+  .tags select{width:100%;background:var(--ink);border:1px solid var(--line);color:var(--bone);font-family:var(--mono);font-size:11px;padding:6px;outline:none;cursor:pointer}
+  .tags select:focus{border-color:var(--amber)}
+
+  .pair{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--brick);padding:12px 14px;margin-bottom:8px}
+  .pair.watch{border-left-color:var(--amber)}
+  .pair-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .pair-ids{font-family:var(--mono);font-size:12.5px;font-weight:700;color:#DE8A80}
+  .pair.watch .pair-ids{color:var(--amber)}
+  .pair-score{font-family:var(--mono);font-size:19px;font-weight:800;margin-left:auto;color:#DE8A80}
+  .pair.watch .pair-score{color:var(--amber)}
+  .pair-why{font-size:13px;color:#B9AD9E;margin-top:7px}
+  .pair-fix{font-size:12.5px;color:var(--moss);margin-top:5px}
+  .sbars{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:9px}
+  .sb{border:1px solid var(--line);padding:6px 8px;border-radius:2px}
+  .sb .n{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:#5E5147}
+  .sb .p{font-family:var(--mono);font-size:15px;font-weight:800;margin-top:2px}
+  .sb.off .p{color:#3A322B;font-size:12px}
+  .sb.v .p{color:var(--moss)} .sb.t .p{color:var(--steel)}
+  .sb.a .p{color:var(--plum)} .sb.h .p{color:var(--amber)}
+  .sb .w{font-family:var(--mono);font-size:8px;color:#3E362F;letter-spacing:.06em}
+  .drv{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;color:var(--amber);margin-top:7px}
+
+  .safebox{background:var(--panel);border:1px solid #3D5A2C;padding:14px}
+  .safenote{font-size:13.5px;color:#B9AD9E;line-height:1.55}
+  .safenote b{color:var(--moss)}
+  .safegrid{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+  .safeitem{display:flex;align-items:center;gap:7px;background:var(--panel-2);border:1px solid var(--line);padding:4px 9px 4px 4px;border-radius:2px;max-width:230px}
+  .safeitem img{width:30px;height:30px;object-fit:cover;flex-shrink:0}
+  .safeitem .sn{font-family:var(--mono);font-size:10.5px;color:#B9AD9E;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .safeitem .si{font-family:var(--mono);font-size:10.5px;font-weight:700;color:var(--moss);flex-shrink:0}
+
+  .mx{overflow-x:auto;border:1px solid var(--line);background:var(--panel)}
+  table{border-collapse:collapse;font-family:var(--mono);font-size:10.5px;width:100%}
+  th,td{padding:6px 7px;text-align:center;border:1px solid #2A231E;white-space:nowrap}
+  th{color:var(--muted);font-weight:400;background:var(--panel-2)}
+  th.rw{text-align:left;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+  td.self{color:#3A322B;background:#171310}
+  td.hot{background:#3A211E;color:#DE8A80;font-weight:700}
+  td.warm{background:#3A2E17;color:#E3B266}
+  td.cool{color:#5E5147}
+
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}
+  button.act{background:var(--panel);border:1px solid var(--line);color:var(--bone);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:10px 14px;cursor:pointer;border-radius:2px}
+  button.act:hover{border-color:var(--clay);background:var(--panel-2)}
+  button.act.pri{background:var(--moss);color:#13170D;border-color:var(--moss);font-weight:700}
+  button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--moss);outline-offset:2px}
+
+  .diag ul{margin:0;padding-left:16px;font-size:13.5px;color:#B9AD9E}
+  .diag li{margin-bottom:7px}
+  .diag li b{color:var(--bone);font-weight:600}
+  .diag li.hot b{color:#DE8A80}
+  .empty{border:1px dashed var(--line);padding:26px 22px;text-align:center;color:var(--muted);font-size:13.5px}
+  .prog{font-family:var(--mono);font-size:11px;color:var(--amber);margin-bottom:12px;letter-spacing:.06em}
+  .saveline{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:#5E5147;align-self:center;margin-left:auto;text-align:right}
+  .saveline.ok{color:var(--moss)}
+  .saveline.warn{color:var(--amber)}
+  .hide{display:none}
+  .foot{margin-top:34px;padding-top:14px;border-top:1px solid var(--line);font-family:var(--mono);font-size:10px;color:#463D34;letter-spacing:.05em;line-height:1.9}
+  @media(max-width:860px){
+    .readout{grid-template-columns:repeat(2,1fr)}
+    .ctop{flex-wrap:wrap}
+    .strip img{width:54px;height:54px}
+    .tags,.sbars{grid-template-columns:repeat(2,1fr)}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="masthead">
+    <div class="eyebrow">Meta Andromeda / retrieval stage</div>
+    <h1>Similarity<br><em>Scanner</em></h1>
+    <p class="dek">Meta reads four things when it groups your ads: the visuals, the copy, the audio, and the message. This tool checks all four and tells you which files collapse into one Entity ID, and which stream is causing it.</p>
+    <div class="streams">
+      <span class="sflag v">Visual — automatic</span>
+      <span class="sflag t">Text — you paste the copy</span>
+      <span class="sflag a">Audio — automatic on video</span>
+      <span class="sflag h">Theme — you tag it</span>
+    </div>
+  </div>
+
+  <div class="drop" id="drop" tabindex="0" role="button">
+    <div class="big">Drop your images and videos here</div>
+    <div class="sm">or tap to choose · JPG PNG WEBP MP4 MOV WEBM</div>
+  </div>
+  <input type="file" id="file" multiple accept="image/*,video/*">
+
+  <div class="prog hide" id="prog"></div>
+  <div class="readout" id="readout"></div>
+
+  <div class="ctrl">
+    <label for="thr">Collapse threshold</label>
+    <input type="range" id="thr" min="40" max="90" value="60">
+    <span class="thr" id="thrv">60%</span>
+    <span class="hint">our setting — Meta has not published a number</span>
+  </div>
+
+  <div class="sec-label"><span>Assets</span><span id="cnt"></span></div>
+  <div id="board"><div class="empty">Nothing scanned yet. Drop in 5-15 creatives to see the retrieval picture.</div></div>
+
+  <div class="row">
+    <button class="act pri" onclick="document.getElementById('file').click()">+ Add more</button>
+    <button class="act" onclick="expandAll()">Open all detail panels</button>
+    <button class="act" onclick="toggleMx()">Similarity matrix</button>
+    <button class="act" onclick="clearAll()">Clear</button>
+    <span class="saveline" id="save" role="status" aria-live="polite"></span>
+  </div>
+
+  <div id="safewrap" class="hide">
+    <div class="sec-label"><span>Safe to upload</span><span id="safecnt"></span></div>
+    <div class="safebox">
+      <div class="safenote" id="safenote"></div>
+      <div class="safegrid" id="safegrid"></div>
+      <div class="row">
+        <button class="act" onclick="copySafe(event)">Copy filenames</button>
+        <button class="act" onclick="resetPins()">Reset picks</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="pairwrap" class="hide">
+    <div class="sec-label"><span>Matching pairs</span><span id="paircnt"></span></div>
+    <div id="pairs"></div>
+  </div>
+
+  <div id="mxwrap" class="hide">
+    <div class="sec-label">Pairwise scores</div>
+    <div class="mx" id="mx"></div>
+  </div>
+
+  <div class="sec-label">Diagnosis</div>
+  <div class="diag" id="diag"><ul><li>Upload files first.</li></ul></div>
+
+  <div class="foot">
+    Weights when all four streams are present — visual 35% · text 25% · theme 25% · audio 15%. Missing streams are dropped and the rest are rescaled.<br>
+    Visual: structure hash + color. Text: word overlap + phrase overlap. Audio: frequency profile, brightness, silence ratio. Theme: the tags you set.<br>
+    This is an estimate, not a copy of Meta's model. Meta uses learned embeddings and has never published its parameters or any threshold.
+  </div>
+</div>
+<script>
+let assets=[], uid=1, THR=0.60, pinned=new Set(), openPanels=new Set();
+const HS=8;
+
+/* ============ TAG VOCAB (theme stream) ============ */
+const TAGS={
+  persona:{label:'Persona',opts:['—','Parent','Young adult','Senior','Founder / expert','Reseller','Athlete / active','Office worker','No person']},
+  benefit:{label:'Main benefit',opts:['—','Taste','Comfort / side effect','Energy','Price / value','Ingredient / how it works','Convenience','Social proof','Business / income']},
+  aware:{label:'Awareness',opts:['—','Unaware','Problem aware','Solution aware','Product aware','Most aware']},
+  format:{label:'Format',opts:['—','Talking head','UGC demo','Flat lay / static','Screen recording','ASMR / no talking','Comparison','Testimonial']}
+};
+const TAGW={persona:.35,benefit:.35,aware:.15,format:.15};
+
+/* ============ VISUAL ============ */
+function frameSig(c){
+  const d=c.getContext('2d',{willReadFrequently:true}).getImageData(0,0,HS+1,HS).data;
+  const g=[];
+  for(let i=0;i<(HS+1)*HS;i++){const o=i*4;g.push(0.299*d[o]+0.587*d[o+1]+0.114*d[o+2]);}
+  const bits=[];
+  for(let y=0;y<HS;y++)for(let x=0;x<HS;x++)bits.push(g[y*(HS+1)+x]>g[y*(HS+1)+x+1]?1:0);
+  return bits;
+}
+function colorSig(el){
+  const c=document.createElement('canvas');c.width=4;c.height=4;
+  const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(el,0,0,4,4);
+  return Array.from(x.getImageData(0,0,4,4).data);
+}
+function grab(el){
+  const s=document.createElement('canvas');s.width=HS+1;s.height=HS;
+  s.getContext('2d',{willReadFrequently:true}).drawImage(el,0,0,HS+1,HS);
+  const t=document.createElement('canvas');t.width=140;t.height=140;
+  const tc=t.getContext('2d');
+  const sw=el.videoWidth||el.naturalWidth,sh=el.videoHeight||el.naturalHeight,m=Math.min(sw,sh);
+  tc.drawImage(el,(sw-m)/2,(sh-m)/2,m,m,0,0,140,140);
+  return{bits:frameSig(s),color:colorSig(el),thumb:t.toDataURL('image/jpeg',0.6)};
+}
+const bitSim=(a,b)=>{let m=0;for(let i=0;i<a.length;i++)if(a[i]===b[i])m++;return m/a.length;};
+function colSim(a,b){let s=0,n=0;for(let i=0;i<a.length;i+=4){s+=Math.abs(a[i]-b[i])+Math.abs(a[i+1]-b[i+1])+Math.abs(a[i+2]-b[i+2]);n+=3;}return 1-(s/n)/255;}
+const fSim=(a,b)=>0.70*bitSim(a.bits,b.bits)+0.30*colSim(a.color,b.color);
+function visualSim(A,B){
+  const fa=A.frames,fb=B.frames;
+  const open=fSim(fa[0],fb[0]);
+  let acc=0,st=0,cl=0,n=0;
+  const scan=(xs,ys)=>xs.forEach(x=>{
+    let best=-1,bj=0;
+    ys.forEach((y,j)=>{const v=fSim(x,y);if(v>best){best=v;bj=j;}});
+    acc+=best;st+=bitSim(x.bits,ys[bj].bits);cl+=colSim(x.color,ys[bj].color);n++;
+  });
+  scan(fa,fb);scan(fb,fa);
+  return{total:0.35*open+0.65*(acc/n),open,struct:st/n,color:cl/n};
+}
+
+/* ============ TEXT ============ */
+const STOP=new Set(('the a an and or but if then of to in on for with is are was were be been it its this that these those you your my our we they he she at as by from so not no all can will just now new get got have has had do does did dont ang ng sa na ay mga ko mo niya nila natin namin yung yun ito iyan para pero kasi ba lang din rin may meron wala hindi ako ikaw siya kami kayo sila kung nang po opo talaga naman lahat isa dahil kaya nga').split(' '));
+const tok=t=>(t||'').toLowerCase().replace(/[^a-z0-9ñ\s]/g,' ').split(/\s+/).filter(w=>w.length>2&&!STOP.has(w));
+function cosine(a,b){
+  const A={},B={};a.forEach(w=>A[w]=(A[w]||0)+1);b.forEach(w=>B[w]=(B[w]||0)+1);
+  let dot=0,na=0,nb=0;
+  new Set([...Object.keys(A),...Object.keys(B)]).forEach(w=>{const x=A[w]||0,y=B[w]||0;dot+=x*y;na+=x*x;nb+=y*y;});
+  return(na&&nb)?dot/Math.sqrt(na*nb):0;
+}
+function shing(t){const w=tok(t),s=new Set();for(let i=0;i<w.length-1;i++)s.add(w[i]+' '+w[i+1]);return s;}
+function jac(a,b){const A=shing(a),B=shing(b);if(!A.size||!B.size)return 0;let x=0;A.forEach(v=>{if(B.has(v))x++;});return x/(A.size+B.size-x);}
+const textSim=(a,b)=>0.6*cosine(tok(a),tok(b))+0.4*jac(a,b);
+
+/* ============ AUDIO ============ */
+function fft(re,im){
+  const n=re.length;
+  for(let i=1,j=0;i<n;i++){
+    let bit=n>>1;
+    for(;j&bit;bit>>=1)j^=bit;
+    j^=bit;
+    if(i<j){const tr=re[i];re[i]=re[j];re[j]=tr;const ti=im[i];im[i]=im[j];im[j]=ti;}
+  }
+  for(let len=2;len<=n;len<<=1){
+    const ang=-2*Math.PI/len,wr=Math.cos(ang),wi=Math.sin(ang);
+    for(let i=0;i<n;i+=len){
+      let cr=1,ci=0;
+      for(let k=0;k<len/2;k++){
+        const ur=re[i+k],ui=im[i+k];
+        const vr=re[i+k+len/2]*cr-im[i+k+len/2]*ci;
+        const vi=re[i+k+len/2]*ci+im[i+k+len/2]*cr;
+        re[i+k]=ur+vr;im[i+k]=ui+vi;
+        re[i+k+len/2]=ur-vr;im[i+k+len/2]=ui-vi;
+        const ncr=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=ncr;
+      }
+    }
+  }
+}
+const BANDS=[[60,180],[180,400],[400,800],[800,1600],[1600,3000],[3000,5000],[5000,8000],[8000,14000]];
+async function audioSig(file){
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC) return null;
+  const ctx=new AC();
+  let ab;
+  try{ ab=await ctx.decodeAudioData(await file.arrayBuffer()); }
+  catch(e){ ctx.close(); return null; }
+  const sr=ab.sampleRate, len=ab.length;
+  if(len<2048){ ctx.close(); return null; }
+  const ch=ab.numberOfChannels;
+  const mono=new Float32Array(len);
+  for(let c=0;c<ch;c++){const d=ab.getChannelData(c);for(let i=0;i<len;i++)mono[i]+=d[i]/ch;}
+  ctx.close();
+  const N=1024, WIN=24;
+  const bandTot=new Float64Array(8);
+  let energies=[], centSum=0, silent=0, used=0;
+  for(let w=0;w<WIN;w++){
+    const start=Math.floor((len-N)*w/(WIN-1));
+    const re=new Float64Array(N), im=new Float64Array(N);
+    let rms=0;
+    for(let i=0;i<N;i++){
+      const v=mono[start+i]*(0.5-0.5*Math.cos(2*Math.PI*i/(N-1)));
+      re[i]=v; rms+=mono[start+i]*mono[start+i];
+    }
+    rms=Math.sqrt(rms/N);
+    energies.push(rms);
+    if(rms<0.006){ silent++; continue; }
+    fft(re,im);
+    let cn=0,cd=0;
+    for(let k=1;k<N/2;k++){
+      const f=k*sr/N, mag=Math.hypot(re[k],im[k]);
+      cn+=f*mag; cd+=mag;
+      for(let b=0;b<8;b++) if(f>=BANDS[b][0]&&f<BANDS[b][1]) bandTot[b]+=mag;
+    }
+    if(cd>0) centSum+=cn/cd;
+    used++;
+  }
+  if(!used) return null;
+  let s=0; for(let b=0;b<8;b++) s+=bandTot[b];
+  const profile=Array.from(bandTot).map(v=>s?v/s:0);
+  const mean=energies.reduce((a,b)=>a+b,0)/energies.length;
+  const varE=Math.sqrt(energies.reduce((a,b)=>a+(b-mean)*(b-mean),0)/energies.length);
+  return{profile, centroid:centSum/used, silence:silent/WIN, dynamics:mean?varE/mean:0};
+}
+function audioSim(a,b){
+  if(!a||!b) return null;
+  let dot=0,na=0,nb=0;
+  for(let i=0;i<8;i++){dot+=a.profile[i]*b.profile[i];na+=a.profile[i]**2;nb+=b.profile[i]**2;}
+  const prof=(na&&nb)?dot/Math.sqrt(na*nb):0;
+  const cent=1-Math.min(Math.abs(a.centroid-b.centroid)/3000,1);
+  const sil=1-Math.abs(a.silence-b.silence);
+  const dyn=1-Math.min(Math.abs(a.dynamics-b.dynamics)/1.5,1);
+  return 0.50*prof+0.22*cent+0.14*sil+0.14*dyn;
+}
+
+/* ============ THEME ============ */
+function themeSim(a,b){
+  let w=0,m=0;
+  for(const k in TAGS){
+    const x=a.tags[k],y=b.tags[k];
+    if(x==='—'||y==='—'||!x||!y) continue;
+    w+=TAGW[k];
+    if(x===y) m+=TAGW[k];
+  }
+  return w>0?{score:m/w,cover:w}:null;
+}
+
+/* ============ COMBINE ============ */
+const BASEW={visual:.35,text:.25,theme:.25,audio:.15};
+function detail(A,B){
+  const v=visualSim(A,B);
+  const hasT=(A.copy||'').trim().length>8 && (B.copy||'').trim().length>8;
+  const t=hasT?textSim(A.copy,B.copy):null;
+  const au=audioSim(A.audio,B.audio);
+  const th=themeSim(A,B);
+  const parts=[{k:'visual',s:v.total},{k:'text',s:t},{k:'audio',s:au},{k:'theme',s:th?th.score:null}]
+    .filter(p=>p.s!==null&&p.s!==undefined);
+  let wsum=0,acc=0;
+  parts.forEach(p=>{wsum+=BASEW[p.k];acc+=BASEW[p.k]*p.s;});
+  const total=wsum?acc/wsum:0;
+  const contrib=parts.map(p=>({k:p.k,s:p.s,w:BASEW[p.k]/wsum})).sort((x,y)=>(y.s*y.w)-(x.s*x.w));
+  return{total,visual:v.total,open:v.open,struct:v.struct,color:v.color,
+         text:t,audio:au,theme:th?th.score:null,parts:parts.map(p=>p.k),
+         driver:contrib.length?contrib[0]:null,wsum};
+}
+const SNAME={visual:'the visuals',text:'the copy',audio:'the audio',theme:'the message'};
+function describe(d){
+  const drv=d.driver?d.driver.k:'visual';
+  if(d.text!==null&&d.text>=0.70&&d.visual>=0.70)
+    return{w:'Same copy and same visuals. This is one ad uploaded twice.',
+           f:'<b>Rewrite the copy and reshoot.</b> Nothing here can be saved.'};
+  if(d.theme!==null&&d.theme>=0.85&&d.visual<0.55)
+    return{w:'The visuals are different but the message is identical — same persona, same benefit, same awareness level. Meta reads meaning, not just pixels.',
+           f:'<b>Change the angle, not the footage.</b> Point this one at a different persona or a different benefit.'};
+  if(d.text!==null&&d.text>=0.65&&d.visual<0.55)
+    return{w:'Different footage, near-identical copy. The words carry the concept, so this still groups.',
+           f:'<b>Rewrite the hook and body from a new angle</b> — different pain point, different opening line.'};
+  if(d.audio!==null&&d.audio>=0.85&&d.visual>=0.55)
+    return{w:'Same voice character, same background sound, similar visuals. Likely the same shoot and the same VO session.',
+           f:'<b>Change the audio treatment</b> — swap voiceover for ambient sound, captions only, or a different speaker.'};
+  if(d.struct>=0.80&&d.color>=0.88)
+    return{w:'Almost the same shot. Same composition, same colors, same lighting.',
+           f:'Do not try to save this one. <b>Reshoot with a different person and a different place.</b>'};
+  if(d.struct>=0.78)
+    return{w:'Same framing and composition. Colors or clothes may differ, but the subject sits in the same spot in the frame.',
+           f:'<b>Change the camera setup.</b> Move from handheld selfie to top-down flat lay or macro close-up.'};
+  if(d.color>=0.92&&d.struct>=0.60)
+    return{w:'Same colors and lighting. Different shots, but the same mood — likely filmed in the same place at the same time.',
+           f:'<b>Change the place and time.</b> Outdoors vs indoors, morning vs night, or a new background.'};
+  if(d.open>=0.85)
+    return{w:'Same opening. This carries the most weight — people see the same first image in both.',
+           f:'<b>Change the first 3 seconds.</b> Text on black, product only, or a motion shot.'};
+  return{w:'Similar enough across '+SNAME[drv]+' to be merged. Nothing single stands out — everything is a little alike.',
+         f:'<b>Change the person or the place</b>, and give it a different angle.'};
+}
+
+/* ============ INGEST ============ */
+function seek(v,t){
+  return new Promise(res=>{
+    let done=false;
+    const fin=()=>{if(!done){done=true;v.onseeked=null;res();}};
+    v.onseeked=fin;setTimeout(fin,900);
+    try{v.currentTime=t;}catch(e){fin();}
+  });
+}
+async function readVideo(file){
+  const url=URL.createObjectURL(file);
+  const v=document.createElement('video');
+  v.preload='auto';v.muted=true;v.playsInline=true;v.src=url;
+  await new Promise((res,rej)=>{
+    v.onloadeddata=res;
+    v.onerror=()=>rej(new Error('cannot read video'));
+    setTimeout(()=>rej(new Error('timeout')),15000);
+  });
+  const dur=isFinite(v.duration)?v.duration:0;
+  const marks=[0.05,0.22,0.45,0.68,0.9].map(p=>Math.min(Math.max(dur*p,0.03),Math.max(dur-0.06,0.03)));
+  const frames=[];
+  for(const t of marks){await seek(v,t);frames.push(grab(v));}
+  URL.revokeObjectURL(url);
+  return{frames,dur,w:v.videoWidth,h:v.videoHeight};
+}
+function readImage(file){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file);
+    const im=new Image();
+    im.onload=()=>{const f=grab(im);URL.revokeObjectURL(url);res({frames:[f],dur:0,w:im.naturalWidth,h:im.naturalHeight});};
+    im.onerror=()=>rej(new Error('cannot read image'));
+    im.src=url;
+  });
+}
+function blankTags(){const t={};for(const k in TAGS)t[k]='—';return t;}
+async function ingest(files){
+  const list=Array.from(files).filter(f=>/^(image|video)\//.test(f.type));
+  if(!list.length)return;
+  const p=document.getElementById('prog');p.classList.remove('hide');
+  for(let i=0;i<list.length;i++){
+    const f=list[i];
+    const isV=f.type.startsWith('video');
+    p.textContent='Scanning frames… '+(i+1)+'/'+list.length+' · '+f.name;
+    try{
+      const r=isV?await readVideo(f):await readImage(f);
+      let au=null;
+      if(isV){
+        p.textContent='Reading audio… '+(i+1)+'/'+list.length+' · '+f.name;
+        try{ au=await audioSig(f); }catch(e){ au=null; }
+      }
+      assets.push({id:uid++,name:f.name,type:isV?'video':'image',size:f.size,copy:'',tags:blankTags(),audio:au,...r});
+    }catch(e){
+      assets.push({id:uid++,name:f.name,type:'error',err:e.message,frames:null,copy:'',tags:blankTags(),audio:null});
+    }
+    render();
+  }
+  p.classList.add('hide');
+}
+
+/* ============ CLUSTER + PICK ============ */
+function analyze(){
+  const good=assets.filter(a=>a.frames);
+  const n=good.length;
+  const D=Array.from({length:n},()=>Array(n).fill(null));
+  for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){const d=detail(good[i],good[j]);D[i][j]=D[j][i]=d;}
+  let cl=good.map((_,i)=>[i]);
+  while(cl.length>1){
+    let best=-1,bi=-1,bj=-1;
+    for(let i=0;i<cl.length;i++)for(let j=i+1;j<cl.length;j++){
+      let s=0,c=0;
+      cl[i].forEach(a=>cl[j].forEach(b=>{s+=D[a][b].total;c++;}));
+      if(s/c>best){best=s/c;bi=i;bj=j;}
+    }
+    if(best<THR)break;
+    cl[bi]=cl[bi].concat(cl[bj]);cl.splice(bj,1);
+  }
+  return{good,D,groups:cl};
+}
+function pickSafe(good,D,groups){
+  const out=new Map();
+  groups.forEach((g,gi)=>{
+    if(g.length===1){out.set(g[0],{gi,auto:true});return;}
+    const p=g.find(i=>pinned.has(good[i].id));
+    if(p!==undefined){out.set(p,{gi,auto:false});return;}
+    let best=g[0],bs=Infinity;
+    g.forEach(i=>{
+      let s=0,c=0;
+      good.forEach((_,j)=>{if(!g.includes(j)){s+=D[i][j].total;c++;}});
+      const mean=c?s/c:0;
+      const q=((good[i].w*good[i].h)||0)/2e7+Math.min(good[i].dur||0,40)/400;
+      const sc=mean-q*0.03;
+      if(sc<bs){bs=sc;best=i;}
+    });
+    out.set(best,{gi,auto:true});
+  });
+  return out;
+}
+
+/* ============ RENDER ============ */
+function render(){
+  const {good,D,groups}=analyze();
+  const pos=new Map(good.map((a,i)=>[a.id,i]));
+  const inDup=new Set();
+  groups.forEach(g=>{if(g.length>1)g.forEach(i=>inDup.add(i));});
+  const safe=pickSafe(good,D,groups);
+
+  const board=document.getElementById('board');
+  if(!assets.length){
+    board.innerHTML='<div class="empty">Nothing scanned yet. Drop in 5-15 creatives to see the retrieval picture.</div>';
+  } else {
+    board.innerHTML=assets.map(a=>{
+      if(!a.frames) return '<div class="card"><div class="ctop"><div class="num">—</div><div class="meta"><div class="fname">'+esc(a.name)+'</div><div class="fmeta">could not scan · '+esc(a.err||'')+'</div></div><button class="kill" onclick="rm('+a.id+')">×</button></div></div>';
+      const i=pos.get(a.id), dup=inDup.has(i), isSafe=safe.has(i);
+      const strip=a.frames.map((f,k)=>'<img src="'+f.thumb+'" class="'+(k===0?'open':'')+'" alt="">').join('');
+      const scored=good.map((_,j)=>j).filter(j=>j!==i).map(j=>({j,d:D[i][j]})).sort((x,y)=>y.d.total-x.d.total);
+      const allHot=scored.filter(x=>x.d.total>=THR), hot=allHot.slice(0,3);
+      const warm=scored.filter(x=>x.d.total<THR&&x.d.total>=THR-0.10).slice(0,2);
+      let verdict='';
+      if(isSafe&&!allHot.length) verdict='<span class="flag safe">✓ SAFE — upload this</span> <span class="flag uniq">own entity ID</span>';
+      else if(isSafe) verdict='<span class="flag safe">✓ SAFE — pick this from the group</span>';
+      else verdict='<span class="flag skip">⊘ SKIP — same as #'+pad(allHot[0].j+1)+'</span><button class="pickbtn" onclick="pin('+a.id+')">Use this one</button>';
+      verdict+=hot.map(x=>{
+        const dd=describe(x.d);
+        return '<div class="vline">↯ Same as <span class="ref">#'+pad(x.j+1)+'</span> — <span class="pct">'+pct(x.d.total)+'%</span> · '+dd.w+'</div>';
+      }).join('');
+      if(allHot.length>3) verdict+='<div class="vline">+ '+(allHot.length-3)+' more</div>';
+      warm.forEach(x=>{verdict+='<div class="vline warn">⚠ Close to <span class="ref">#'+pad(x.j+1)+'</span> — <span class="pct">'+pct(x.d.total)+'%</span> · watch this one</div>';});
+
+      const hasT=(a.copy||'').trim().length>8, hasH=Object.values(a.tags).some(v=>v!=='—');
+      const have='<div class="have">'+
+        '<i class="on v">VISUAL</i>'+
+        '<i class="'+(hasT?'on t':'')+'">TEXT</i>'+
+        '<i class="'+(a.audio?'on a':'')+'">AUDIO</i>'+
+        '<i class="'+(hasH?'on h':'')+'">THEME</i></div>';
+
+      const open=openPanels.has(a.id);
+      const panel=open?('<div class="panel">'+
+        '<label class="plab" for="cp'+a.id+'">Ad copy — hook, primary text, headline, on-screen captions</label>'+
+        '<textarea id="cp'+a.id+'" placeholder="Paste everything the viewer reads or hears…" oninput="setCopy('+a.id+',this.value)">'+esc(a.copy)+'</textarea>'+
+        '<div class="tags">'+Object.keys(TAGS).map(k=>
+          '<div><label class="plab">'+TAGS[k].label+'</label><select onchange="setTag('+a.id+",'"+k+"',this.value)\">"+
+          TAGS[k].opts.map(o=>'<option '+(o===a.tags[k]?'selected':'')+'>'+o+'</option>').join('')+'</select></div>').join('')+
+        '</div></div>'):'';
+
+      return '<div class="card '+(dup?'dup ':'')+(isSafe?'pick':'pass')+'">'+
+        '<div class="ctop"><div class="num">'+pad(i+1)+'</div><div class="strip">'+strip+'</div>'+
+        '<div class="meta"><div class="fname">'+esc(a.name)+'</div>'+
+        '<div class="fmeta">'+a.type+(a.type==='video'?' · '+a.dur.toFixed(1)+'s':'')+' · '+(a.w&&a.h?a.w+'×'+a.h:'')+' · '+(a.size/1048576).toFixed(1)+'MB'+(a.type==='video'&&!a.audio?' · no audio track read':'')+'</div>'+
+        have+'<div class="verdict">'+verdict+'</div></div>'+
+        '<button class="kill" onclick="rm('+a.id+')" aria-label="Remove">×</button></div>'+
+        '<button class="expand" onclick="togglePanel('+a.id+')">'+(open?'▾ hide copy & tags':'▸ add copy & tags'+(hasT||hasH?' (filled)':''))+'</button>'+
+        panel+'</div>';
+    }).join('');
+  }
+  document.getElementById('cnt').textContent=assets.length?assets.length+' file':'';
+
+  const sw=document.getElementById('safewrap');
+  if(good.length){
+    sw.classList.remove('hide');
+    const keys=[...safe.keys()].sort((x,y)=>x-y);
+    const manual=[...safe.values()].filter(v=>!v.auto).length;
+    const dropped=good.length-keys.length;
+    document.getElementById('safecnt').textContent=keys.length+' of '+good.length;
+    let note='<b>Upload '+keys.length+' files</b> — one from each group. ';
+    note+=dropped?('The other '+dropped+' will not earn extra tickets in the auction. Reshoot them using the fixes below. '):'No duplicates. You can use all of them. ';
+    note+=keys.length<10?('You still need <b>'+(10-keys.length)+'</b> more to reach the baseline of 10.'):'You are at target.';
+    if(manual)note+=' <span style="color:var(--amber)">'+manual+' picked by you.</span>';
+    document.getElementById('safenote').innerHTML=note;
+    document.getElementById('safegrid').innerHTML=keys.map(i=>'<div class="safeitem"><img src="'+good[i].frames[0].thumb+'" alt=""><span class="si">#'+pad(i+1)+'</span><span class="sn">'+esc(good[i].name)+'</span></div>').join('');
+  } else sw.classList.add('hide');
+
+  const plist=[];
+  for(let i=0;i<good.length;i++)for(let j=i+1;j<good.length;j++)
+    if(D[i][j].total>=THR-0.10)plist.push({i,j,d:D[i][j]});
+  plist.sort((a,b)=>b.d.total-a.d.total);
+  const pw=document.getElementById('pairwrap');
+  if(plist.length){
+    pw.classList.remove('hide');
+    document.getElementById('paircnt').textContent=plist.filter(p=>p.d.total>=THR).length+' collapse';
+    document.getElementById('pairs').innerHTML=plist.slice(0,25).map(p=>{
+      const dd=describe(p.d),d=p.d,watch=d.total<THR;
+      const bar=(cls,name,val)=>val===null||val===undefined
+        ?'<div class="sb off"><div class="n">'+name+'</div><div class="p">n/a</div><div class="w">not provided</div></div>'
+        :'<div class="sb '+cls+'"><div class="n">'+name+'</div><div class="p">'+pct(val)+'%</div><div class="w">weight '+Math.round(BASEW[{V:'visual',T:'text',A:'audio',H:'theme'}[cls.toUpperCase()]||cls]/d.wsum*100)+'%</div></div>';
+      return '<div class="pair '+(watch?'watch':'')+'">'+
+        '<div class="pair-h"><span class="pair-ids">#'+pad(p.i+1)+' ↔ #'+pad(p.j+1)+'</span>'+
+        '<span class="hint">'+esc(short(good[p.i].name))+' / '+esc(short(good[p.j].name))+'</span>'+
+        '<span class="pair-score">'+pct(d.total)+'%</span></div>'+
+        '<div class="sbars">'+bar('v','VISUAL',d.visual)+bar('t','TEXT',d.text)+bar('a','AUDIO',d.audio)+bar('h','THEME',d.theme)+'</div>'+
+        (d.driver?'<div class="drv">MAIN DRIVER: '+SNAME[d.driver.k].toUpperCase()+'</div>':'')+
+        '<div class="pair-why">'+(watch?'<b style="color:var(--amber)">Below the threshold but close. </b>':'')+dd.w+'</div>'+
+        '<div class="pair-fix">→ '+dd.f+'</div></div>';
+    }).join('');
+  } else pw.classList.add('hide');
+
+  const ids=groups.length,up=good.length,wasted=up-ids;
+  const cls=(v,g,w)=>v>=g?'ok':v>=w?'warn':'bad';
+  const cov=coverage(good);
+  document.getElementById('readout').innerHTML=
+    '<div class="stat"><div class="k">Uploaded</div><div class="v">'+up+'</div><div class="n">files scanned</div></div>'+
+    '<div class="stat"><div class="k">Entity IDs</div><div class="v '+(up?cls(ids,10,6):'')+'">'+ids+'</div><div class="n">target 10+</div></div>'+
+    '<div class="stat"><div class="k">Wasted</div><div class="v '+(wasted===0?'ok':'bad')+'">'+wasted+'</div><div class="n">'+(wasted?'merged with others':'no duplicates')+'</div></div>'+
+    '<div class="stat"><div class="k">Streams active</div><div class="v '+(up?cls(cov.n,4,3):'')+'">'+cov.n+'/4</div><div class="n">'+cov.txt+'</div></div>';
+
+  const d=[];
+  if(!up)d.push('<li>Upload some creatives first.</li>');
+  else{
+    const col=groups.filter(g=>g.length>1);
+    if(col.length){
+      d.push('<li class="hot"><b>'+wasted+' of '+up+' files will not count.</b> Retrieval sees '+ids+' candidates, not '+up+'.</li>');
+      col.forEach(g=>{
+        let s=0,c=0;g.forEach(a=>g.forEach(b=>{if(a<b){s+=D[a][b].total;c++;}}));
+        d.push('<li>Group: '+g.map(i=>'<b>#'+pad(i+1)+'</b>').join(' = ')+' — average '+pct(s/c)+'%. They share one ticket in the auction.</li>');
+      });
+    } else d.push('<li><b>Clean.</b> No pair went above '+Math.round(THR*100)+'%. Every file gets its own ticket.</li>');
+    if(ids<10)d.push('<li>You need <b>'+(10-ids)+'</b> more distinct assets to reach the baseline of 10 for broad targeting.</li>');
+    if(cov.n<4)d.push('<li><b>Only '+cov.n+' of 4 streams are running.</b> '+cov.miss+' Meta checks all four, so this score is an incomplete picture.</li>');
+    const noAud=good.filter(a=>a.type==='video'&&!a.audio).length;
+    if(noAud)d.push('<li>'+noAud+' videos had no readable audio track. The audio stream was skipped for those.</li>');
+  }
+  document.getElementById('diag').innerHTML='<ul>'+d.join('')+'</ul>';
+  if(!document.getElementById('mxwrap').classList.contains('hide'))drawMx(good,D);
+  save();
+}
+function coverage(good){
+  if(!good.length)return{n:0,txt:'nothing loaded',miss:''};
+  const t=good.filter(a=>(a.copy||'').trim().length>8).length;
+  const h=good.filter(a=>Object.values(a.tags).some(v=>v!=='—')).length;
+  const au=good.filter(a=>a.audio).length;
+  let n=1;const miss=[];
+  if(t>=2)n++;else miss.push('Paste ad copy on at least 2 files to turn on the text stream.');
+  if(au>=2)n++;else miss.push('Audio needs 2+ videos with a readable track.');
+  if(h>=2)n++;else miss.push('Tag persona and benefit on at least 2 files to turn on the theme stream.');
+  return{n,txt:'visual'+(t>=2?' · text':'')+(au>=2?' · audio':'')+(h>=2?' · theme':''),miss:miss.join(' ')};
+}
+function drawMx(good,D){
+  const el=document.getElementById('mx');
+  if(good.length<2){el.innerHTML='<div class="empty">You need at least 2 files.</div>';return;}
+  let h='<table><tr><th class="rw"></th>'+good.map((a,i)=>'<th>'+(i+1)+'</th>').join('')+'</tr>';
+  good.forEach((a,i)=>{
+    h+='<tr><th class="rw">'+(i+1)+'. '+esc(short(a.name))+'</th>';
+    good.forEach((b,j)=>{
+      if(i===j){h+='<td class="self">—</td>';return;}
+      const v=pct(D[i][j].total);
+      h+='<td class="'+(D[i][j].total>=THR?'hot':(v>=Math.round(THR*100)-10?'warm':'cool'))+'">'+v+'</td>';
+    });
+    h+='</tr>';
+  });
+  el.innerHTML=h+'</table>';
+}
+
+/* ============ ACTIONS ============ */
+const pad=n=>String(n).padStart(2,'0');
+const pct=v=>Math.round(v*100);
+const short=n=>n.length>20?n.slice(0,17)+'…':n;
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function setCopy(id,v){const a=assets.find(x=>x.id===id);if(a){a.copy=v;clearTimeout(a._t);a._t=setTimeout(render,600);}}
+function setTag(id,k,v){const a=assets.find(x=>x.id===id);if(a){a.tags[k]=v;render();}}
+function togglePanel(id){openPanels.has(id)?openPanels.delete(id):openPanels.add(id);render();}
+function expandAll(){assets.forEach(a=>openPanels.add(a.id));render();}
+function pin(id){
+  const {good,groups}=analyze();
+  const i=good.findIndex(a=>a.id===id);
+  (groups.find(x=>x.includes(i))||[]).forEach(k=>pinned.delete(good[k].id));
+  pinned.add(id);render();
+}
+function resetPins(){pinned.clear();render();}
+function rm(id){assets=assets.filter(a=>a.id!==id);openPanels.delete(id);render();}
+function clearAll(){if(assets.length&&!confirm('Clear all '+assets.length+' files? This also erases the session saved in this browser.'))return;assets=[];openPanels.clear();pinned.clear();render();}
+function toggleMx(){
+  const w=document.getElementById('mxwrap');w.classList.toggle('hide');
+  if(!w.classList.contains('hide')){const {good,D}=analyze();drawMx(good,D);}
+}
+function copySafe(ev){
+  const {good,D,groups}=analyze();
+  const names=[...pickSafe(good,D,groups).keys()].sort((a,b)=>a-b).map(i=>good[i].name).join('\n');
+  const btn=ev&&ev.target;
+  navigator.clipboard.writeText(names).then(()=>{
+    if(btn){const t=btn.textContent;btn.textContent='Copied';setTimeout(()=>btn.textContent=t,1400);}
+  }).catch(()=>alert(names));
+}
+const drop=document.getElementById('drop'),fin=document.getElementById('file');
+drop.onclick=()=>fin.click();
+drop.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();fin.click();}};
+fin.onchange=e=>{ingest(e.target.files);fin.value='';};
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
+drop.addEventListener('drop',e=>ingest(e.dataTransfer.files));
+document.getElementById('thr').oninput=e=>{THR=+e.target.value/100;document.getElementById('thrv').textContent=e.target.value+'%';render();};
+
+/* ============ SESSION MEMORY ============ */
+const DBN='creative-scanner', STORE='session', KEY='current';
+let ready=false, canStore=true, saveT=null, dbp=null;
+
+function openDb(){
+  if(dbp) return dbp;
+  dbp=new Promise((res,rej)=>{
+    let r;
+    try{ r=indexedDB.open(DBN,1); }catch(e){ rej(e); return; }
+    r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains(STORE)) r.result.createObjectStore(STORE); };
+    r.onsuccess=()=>res(r.result);
+    r.onerror=()=>rej(r.error||new Error('storage blocked'));
+    r.onblocked=()=>rej(new Error('storage blocked'));
+  });
+  return dbp;
+}
+function tell(msg,cls){
+  const el=document.getElementById('save');
+  if(el){el.textContent=msg;el.className='saveline'+(cls?' '+cls:'');}
+}
+const keep=a=>({id:a.id,name:a.name,type:a.type,size:a.size,copy:a.copy,tags:a.tags,
+                audio:a.audio,frames:a.frames,dur:a.dur,w:a.w,h:a.h,err:a.err});
+async function writeSession(){
+  if(!canStore) return;
+  try{
+    const d=await openDb();
+    await new Promise((res,rej)=>{
+      const tx=d.transaction(STORE,'readwrite'), st=tx.objectStore(STORE);
+      if(assets.length) st.put({uid,thr:THR,pinned:[...pinned],open:[...openPanels],assets:assets.map(keep),at:Date.now()},KEY);
+      else st.delete(KEY);
+      tx.oncomplete=res; tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error);
+    });
+    tell(assets.length?'Saved in this browser · '+assets.length+' file'+(assets.length>1?'s':''):'Nothing saved yet');
+  }catch(e){
+    if(e&&e.name==='QuotaExceededError'){tell('Too big to save — remove a few files to keep this session','warn');return;}
+    canStore=false;
+    tell('Not saved — this browser is blocking storage','warn');
+  }
+}
+function save(){ if(!ready) return; clearTimeout(saveT); saveT=setTimeout(writeSession,700); }
+async function restore(){
+  try{
+    const d=await openDb();
+    const p=await new Promise((res,rej)=>{
+      const tx=d.transaction(STORE,'readonly'), rq=tx.objectStore(STORE).get(KEY);
+      rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error);
+    });
+    ready=true;
+    if(p&&p.assets&&p.assets.length){
+      assets=p.assets;
+      uid=Math.max(p.uid||1, assets.reduce((m,a)=>Math.max(m,a.id||0),0)+1);
+      pinned=new Set(p.pinned||[]);
+      openPanels=new Set(p.open||[]);
+      if(p.thr){
+        THR=p.thr;
+        document.getElementById('thr').value=Math.round(THR*100);
+        document.getElementById('thrv').textContent=Math.round(THR*100)+'%';
+      }
+      render();
+      tell('Picked up where you left off · '+assets.length+' file'+(assets.length>1?'s':''),'ok');
+    } else tell('Saves in this browser as you go');
+  }catch(e){
+    canStore=false; ready=true;
+    tell('Not saved — this browser is blocking storage','warn');
+  }
+}
+render();
+restore();
+</script>
+</body>
+</html>
